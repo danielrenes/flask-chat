@@ -106,8 +106,6 @@ $(document).ready(function() {
   });
 
   function refreshActiveUsers(data) {
-    console.log('refreshActiveUsers');
-    console.log(data);
     var now = new Date();
     for (var i = 0; i < data.length; i++) {
       var found = false;
@@ -137,8 +135,6 @@ $(document).ready(function() {
   };
 
   function refreshMessages(data) {
-    console.log('refreshMessages');
-    console.log(data);
     ul_messages.empty();
     for (var i = 0; i < data.length; i++) {
       msg = data[i]['text'];
