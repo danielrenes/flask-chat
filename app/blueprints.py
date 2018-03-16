@@ -41,10 +41,7 @@ def login():
 @usr.route('/user/logout', methods=['POST'])
 @token_required
 def logout():
-    username = request.json.get('user')
-    if not username:
-        abort(400)
-    user = User.query.filter(User.name==username).first()
+    user = User.query.join(Token, User.id==Token.user_id).filter(Token.token==request.json.get('token')).first()
     if not user:
         abort(400)
     if not user.active:
@@ -54,12 +51,25 @@ def logout():
     push_users()
     return '', 200
 
-@usr.route('/user/active', methods=['GET'])
-def active_users():
-    active_users = User.query.filter(User.active==True).all()
-    return jsonify([
-        {'user': active_user.name} for active_user in active_users
-    ])
+@usr.route('/user/token', methods=['POST'])
+def renew_token():
+    token = request.json.get('token')
+    if not token:
+        abort(400)
+    old_token = Token.query.filter(Token.token==token).first()
+    if not token:
+        abort(400)
+    user = User.query.join(Token, User.id==Token.user_id).filter(User.token==old_token).first()
+    if not user:
+        abort(400)
+    db.session.delete(old_token)
+    token_data = user.generate_token()
+    new_token = Token(token=token_data['token'], expires_at=token_data['expires_at'], user_id=user.id)
+    db.session.add(new_token)
+    db.session.commit()
+    return jsonify({
+        'token': token_data['token']
+    })
 
 @msg.route('/msg/send', methods=['POST'])
 @token_required
@@ -75,10 +85,3 @@ def send():
     db.session.commit()
     push_messages()
     return '', 200
-
-@msg.route('/msg', methods=['GET'])
-def messages():
-    messages = Message.query.join(User, User.id==Message.user_id).all()
-    return jsonify([
-        {'text': message.text, 'user': message.user.name} for message in messages
-    ])

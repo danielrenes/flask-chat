@@ -28,6 +28,12 @@ $(document).ready(function() {
   var ul_messages = $('ul#messages');
   var input_msg = $('form#msg > div.field > div.control > input[name="text"]');
 
+  $.ajaxSetup({
+    statusCode: {
+      401: tokenErrorHandler
+    }
+  });
+
   var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port + '/notification');
   console.log(location.protocol + '//' + document.domain + ':' + location.port + '/notification');
 
@@ -68,21 +74,30 @@ $(document).ready(function() {
     object.style.color = color;
   });
 
-
   form_login.submit(function() {
     username = $(this).serialize().split('&')[0].split('=')[1];
-    $.post($(this).attr('action'), $(this).serialize(), function(response) {
-      if (typeof response !== 'undefined' && 'token' in response) {
-        token = response['token'];
-        form_login.attr('style', 'display: none');
-        button_logout.attr('style', 'display: block');
-      }
-    }, 'json');
+    $.post(
+      $(this).attr('action'),
+      $(this).serialize(),
+      function(response) {
+        if (typeof response !== 'undefined' && 'token' in response) {
+          token = response['token'];
+          form_login.attr('style', 'display: none');
+          button_logout.attr('style', 'display: block');
+        }
+      },
+      'json'
+    );
     return false;
   });
 
   form_msg.submit(function() {
-    $.post($(this).attr('action'), $(this).serialize() + '&token=' + token, function(response) {}, 'json');
+    $.post(
+      $(this).attr('action'),
+      $(this).serialize() + '&token=' + token,
+      function(response) {},
+      'json'
+    );
     input_msg.val('');
     return false;
   });
@@ -93,7 +108,6 @@ $(document).ready(function() {
       type: 'POST',
       contentType: 'application/json',
       data: JSON.stringify({
-        'user': username,
         'token': token
       }),
       success: function(response) {
@@ -147,6 +161,57 @@ $(document).ready(function() {
         }
       }
       ul_messages.append('<li style="color: rgb(' + hexToRgb(color) + ');">' + msg + '</li>');
+    }
+  };
+
+  function tokenErrorHandler(jqxhr, textStatus, errorThrown) {
+    var request = this;
+    var is_token_error = 'renew_token' in jqxhr.responseJSON;
+    if (is_token_error) {
+      var token_renewed = false;
+      $.ajax({
+        url: jqxhr.responseJSON.renew_token,
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+          'token': token
+        }),
+        success: function(response) {
+          if (typeof response !== 'undefined' && 'token' in response) {
+            token = response['token'];
+            token_renewed = true;
+          }
+        }
+      }).done(function() {
+        if (token_renewed === true) {
+          var token_replaced = false;
+          var new_request_data = [];
+          if (request.data[0] === '{') {
+            var old_request_data = JSON.parse(request.data);
+            if ('token' in old_request_data) {
+              old_request_data['token'] = token;
+              token_replaced = true;
+            }
+            new_request_data = JSON.stringify(old_request_data);
+          } else {
+            var old_request_data = request.data.split('&');
+            for (var i = 0; i < old_request_data.length; i++) {
+              var [key, value] = old_request_data[i].split('=');
+              if (key == 'token') {
+                new_request_data.push('token=' + token);
+                token_replaced = true;
+              } else {
+                new_request_data.push(old_request_data[i]);
+              }
+            }
+            new_request_data = new_request_data.join('&');
+          }
+          if (token_replaced === true) {
+            request.data = new_request_data;
+            $.ajax(request);
+          }
+        }
+      });
     }
   };
 });
