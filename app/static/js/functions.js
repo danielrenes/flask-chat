@@ -21,6 +21,9 @@ $(document).ready(function() {
   var token;
   var active_users = [];
 
+  var active_users_refreshing = false;
+  var messages_refreshing = false;
+
   var form_login = $('form#login');
   var form_msg = $('form#msg');
   var button_logout = $('p#logout');
@@ -42,11 +45,15 @@ $(document).ready(function() {
   });
 
   socket.on('push_users', function(msg) {
-    refreshActiveUsers(msg['data']);
+    setTimeout(function() {
+      refreshActiveUsers(msg['data']);
+    }, 0);
   });
 
   socket.on('push_messages', function(msg) {
-    refreshMessages(msg['data']);
+    setTimeout(function() {
+      refreshMessages(msg['data']);
+    }, 0);
   });
 
   ul_active_users.children('li').each(function(index, object) {
@@ -74,32 +81,37 @@ $(document).ready(function() {
     object.style.color = color;
   });
 
-  form_login.submit(function() {
-    username = $(this).serialize().split('&')[0].split('=')[1];
-    $.post(
-      $(this).attr('action'),
-      $(this).serialize(),
-      function(response) {
+  form_login.submit(function(e) {
+    var $this = $(this);
+    var username = $this.serialize().split('&')[0].split('=')[1];
+    var form_data = $this.serialize();
+    $.ajax({
+      url: '/user/login',
+      type: 'POST',
+      data: form_data,
+      success: function(response) {
         if (typeof response !== 'undefined' && 'token' in response) {
           token = response['token'];
           form_login.attr('style', 'display: none');
           button_logout.attr('style', 'display: block');
         }
-      },
-      'json'
-    );
-    return false;
+      }
+    });
+    e.preventDefault();
   });
 
-  form_msg.submit(function() {
-    $.post(
-      $(this).attr('action'),
-      $(this).serialize() + '&token=' + token,
-      function(response) {},
-      'json'
-    );
-    input_msg.val('');
-    return false;
+  form_msg.submit(function(e) {
+    var $this = $(this);
+    var form_data = $this.serialize() + '&token=' + token;
+    $.ajax({
+      url: '/msg/send',
+      type: 'POST',
+      data: form_data,
+      success: function(response) {
+        input_msg.val('');
+      }
+    });
+    e.preventDefault();
   });
 
   button_logout.click(function() {
@@ -120,47 +132,63 @@ $(document).ready(function() {
   });
 
   function refreshActiveUsers(data) {
-    var now = new Date();
-    for (var i = 0; i < data.length; i++) {
-      var found = false;
-      for (var j = 0; j < active_users.length; j++) {
-        if (active_users[j]['user'] === data[i]['user']) {
-          active_users[j]['refreshed_at'] = now;
-          found = true;
-          break;
+    if (messages_refreshing === true) {
+      setTimeout(function() {
+        refreshActiveUsers(data);
+      }, 100);
+    } else {
+      active_users_refreshing = true;
+      var now = new Date();
+      for (var i = 0; i < data.length; i++) {
+        var found = false;
+        for (var j = 0; j < active_users.length; j++) {
+          if (active_users[j]['user'] === data[i]['user']) {
+            active_users[j]['refreshed_at'] = now;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          active_users.push({
+            'user': data[i]['user'],
+            'color': randomColor(),
+            'refreshed_at': now
+          });
         }
       }
-      if (!found) {
-        active_users.push({
-          'user': data[i]['user'],
-          'color': randomColor(),
-          'refreshed_at': now
-        });
+      ul_active_users.empty();
+      for (var i = active_users.length - 1; i >= 0; i--) {
+        if (active_users[i]['refreshed_at'].getTime() !== now.getTime()) {
+          active_users.splice(i, 1);
+        } else {
+          ul_active_users.append('<li style="color: rgb(' + hexToRgb(active_users[i]['color']) + ');">' + active_users[i]['user'] + '</li>');
+        }
       }
-    }
-    ul_active_users.empty();
-    for (var i = active_users.length - 1; i >= 0; i--) {
-      if (active_users[i]['refreshed_at'].getTime() !== now.getTime()) {
-        active_users.splice(i, 1);
-      } else {
-        ul_active_users.append('<li style="color: rgb(' + hexToRgb(active_users[i]['color']) + ');">' + active_users[i]['user'] + '</li>');
-      }
+      active_users_refreshing = false;
     }
   };
 
   function refreshMessages(data) {
-    ul_messages.empty();
-    for (var i = 0; i < data.length; i++) {
-      msg = data[i]['text'];
-      user = data[i]['user'];
-      var color = '#000000';
-      for (var i = 0; i < active_users.length; i++) {
-        if (active_users[i]['user'] === user) {
-          color = active_users[i]['color'];
-          break;
+    if (active_users_refreshing === true) {
+      setTimeout(function() {
+        refreshMessages(data);
+      }, 100);
+    } else {
+      messages_refreshing = true;
+      ul_messages.empty();
+      for (var i = 0; i < data.length; i++) {
+        msg = data[i]['text'];
+        user = data[i]['user'];
+        var color = '#000000';
+        for (var j = 0; j < active_users.length; j++) {
+          if (active_users[j]['user'] === user) {
+            color = active_users[j]['color'];
+            break;
+          }
         }
+        ul_messages.append('<li style="color: rgb(' + hexToRgb(color) + ');">' + msg + '</li>');
       }
-      ul_messages.append('<li style="color: rgb(' + hexToRgb(color) + ');">' + msg + '</li>');
+      messages_refreshing = false;
     }
   };
 
